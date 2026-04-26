@@ -1,0 +1,25 @@
+services:
+  fuxa:
+    image: rmartinsanta/pic-p2-fuxa:latest
+    restart: on-failure
+    ports:
+      - "127.0.0.1:1881:1881"
+    #volumes:
+    #  - "./logs:/usr/src/app/FUXA/server/_logs"
+
+  emulator:
+    image: rmartinsanta/pic-p2-emulator:latest
+    restart: on-failure
+    ports:
+      - "127.0.0.1:502:502"
+    #  - "127.0.0.1:5005:5005"
+
+  automation:
+    image: rmartinsanta/pic-p2-automation:latest
+    restart: on-failure
+    depends_on:
+      - emulator
+      - fuxa
+    environment:
+      MODBUS_HOST: emulator
+      MODBUS_PORT: "502"
