@@ -1,10 +1,15 @@
-from pwn import remote
+import threading
+from pwn import remote, context
 import struct
+import time
+context.log_level = 'error'  # Usado para no mostrar el mensajes de conexion abierta y cerrada cuando se hace el escaneo de coils
 
 HOST = "localhost"
 PORT = 502
 UID = 1
 COILS = [16, 36, 52, 78] # Direeciones de los coil sacadas tras haber lanzado escaneo con el modulo de modbusclient para leer coils
+UMBRAL = 5
+UMBRAL_SECURE = 97
 
 def scanning_devices(conn): # Función utilziada para el Escenario 2.
     for uid in range(1,200):
@@ -14,6 +19,7 @@ def scanning_devices(conn): # Función utilziada para el Escenario 2.
             print(f"Device found with UID: {uid} and state is: {state}")
         except Exception as e:
             print(f"UID {uid} is not responding: {e}")
+
 
 
 # Paquete Modbus: Transaction ID (2 bytes), Protocol ID (2 bytes), Length (2 bytes), Unit ID (1 byte), Function Code (1 byte), Data (En este caso 1 byte)
@@ -82,13 +88,44 @@ def set_all(conn, uid, temp):
     for i in range(len(COILS)):
         write_coil(conn, uid, COILS[i], temp)
 
+"""def refill(conn,uid):
+    currentLevel = read_hregister(conn,uid, 27)
+    if currentLevel <= 0 + UMBRAL:
+        write_coil(conn, uid, 1350, True) # Se abre grifo para rellenar
+    
+        while True:
+            currentLevel = read_hregister(conn,uid, 27)
+            if (currentLevel + UMBRAL) >= 100:
+                write_coil(conn, uid, 1350, False) # Se cierra el grifo
+                break
+"""
+
+def refill(conn, uid):
+    currentLevel = read_hregister(conn, uid, 27)
+    if currentLevel <= (UMBRAL+5):  # Se anade un margen de seguridad
+        write_coil(conn, uid, 1350, True)  # Abre grifo
+        while True:
+            currentLevel = read_hregister(conn, uid, 26)
+            if currentLevel >= (100 - UMBRAL):  
+                write_coil(conn, uid, 1350, False)  # Cierra grifo
+                break
+            time.sleep(0.3)
+    
+def secureRefill(conn, uid, UMBRAL_SECURE):
+    while True:
+        currentLevel= read_hregister(conn,uid, 26)
+        if currentLevel >= UMBRAL_SECURE:
+            write_coil(conn, uid, 1350, False) 
+            write_coil(conn,uid,1346, True)
+            time.sleep(5)
+            write_coil(conn,uid,1346, False) # Se desactiva ya el freno de emergencia
+        time.sleep(0.3)
+
+
 if __name__ == "__main__":
     
     with remote(HOST, PORT) as conn:
-
-        scanning_devices(conn)
-
-
+     
         # Primera funcionalidad donde se muestra el estado de todos los coils
         for c in COILS:
             try:
@@ -119,5 +156,38 @@ if __name__ == "__main__":
             except:
                 pass
         
-        
+        """ Funcionalidad para saber los coils en el escenario 2
+        for addr in range(0, 2000):
+            try:
+                conn = remote(HOST, PORT, timeout=2)
+                state = read_coil(conn, 25, addr)
+                print(f"Coil {addr}: {state}")
+                conn.close()
+            except Exception as e:
+                conn.close()
+        """
+        """ Funcionalidad para ir escribiendo en cada coil encontrado y cambiando el estado para ver qué ocurre
+        for addr in range(1337, 1360):
+            try:
+                conn = remote(HOST, PORT, timeout=2)
+                write_coil(conn, 25, addr, True)
+                print(f"Coil {addr}")
+                conn.close()
+            except Exception as e:
+                conn.close()
+        """
+
+    # Escenario 2: dos conexiones separadas para evitar colisiones
+    conn_refill = remote(HOST, PORT)
+    conn_secure = remote(HOST, PORT)
+
+    thread = threading.Thread(target=secureRefill, args=(conn_secure, 25, UMBRAL_SECURE))
+    thread.daemon = True
+    thread.start()
+
+    while True:
+        refill(conn_refill, 25)
+        time.sleep(0.5)
+
+
 
