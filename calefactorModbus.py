@@ -117,7 +117,7 @@ def secureRefill(conn, uid, UMBRAL_SECURE):
         if currentLevel >= UMBRAL_SECURE:
             write_coil(conn, uid, 1350, False) 
             write_coil(conn,uid,1346, True)
-            time.sleep(10)
+            time.sleep(12)
             write_coil(conn,uid,1346, False) # Se desactiva ya el freno de emergencia
         time.sleep(0.3)
 
